@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pitchless-brain": {
+      "command": "npx",
+      "args": ["tsx", "/Users/jayshankarpure/pitchless-brain-mcp/src/index.ts"],
+      "env": {
+        "NOTION_TOKEN": "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"
+      }
+    }
+  }
+}

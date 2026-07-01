@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { IncomingMessage, ServerResponse } from "http";
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN ?? "";
+const MCP_SECRET = process.env.MCP_SECRET ?? "";
 const notion = new Client({ auth: NOTION_TOKEN });
 
 const DATABASES: Record<string, string> = {
@@ -146,6 +147,15 @@ function createMcpServer() {
 
 // Vercel serverless handler
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  // Auth check
+  const auth = (req.headers["authorization"] ?? "") as string;
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token || token !== MCP_SECRET) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
+  }
+
   if (req.method === "GET" && (req as any).url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", name: "pitchless-brain-mcp" }));

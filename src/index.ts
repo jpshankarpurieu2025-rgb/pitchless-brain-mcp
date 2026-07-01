@@ -127,7 +127,9 @@ const TOOLS = [
       type: "object",
       properties: {
         database: { type: "string", enum: Object.keys(DATABASES), description: "Which database to query" },
-        limit: { type: "number", description: "Max results (default 50)" },
+        limit: { type: "number", description: "Max results (default 50, max 100)" },
+        sort_by: { type: "string", description: "Property name to sort by (e.g. 'Nº events')" },
+        sort_direction: { type: "string", enum: ["ascending", "descending"], description: "Sort direction (default descending)" },
       },
       required: ["database"],
     },
@@ -190,10 +192,13 @@ async function callTool(name: string, args: any): Promise<string> {
     case "query_database": {
       const dbId = DATABASES[args.database as string];
       if (!dbId) throw new Error(`Unknown database: ${args.database}`);
+      const sorts: any[] = args.sort_by
+        ? [{ property: args.sort_by, direction: args.sort_direction ?? "descending" }]
+        : [{ timestamp: "last_edited_time", direction: "descending" }];
       const res = await notion.databases.query({
         database_id: dbId,
         page_size: Math.min(args.limit ?? 50, 100),
-        sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+        sorts,
       });
       return JSON.stringify({ database: args.database, count: res.results.length, rows: res.results.map(formatPage) }, null, 2);
     }

@@ -5,7 +5,11 @@ import { z } from "zod";
 import type { IncomingMessage, ServerResponse } from "http";
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN ?? "";
-const MCP_SECRET = process.env.MCP_SECRET ?? "";
+const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID ?? "pitchless-brain";
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET ?? "";
+// Derived bearer token — SHA-free simple concat, good enough for internal tool
+const VALID_TOKEN = `${OAUTH_CLIENT_ID}:${OAUTH_CLIENT_SECRET}`;
+
 const notion = new Client({ auth: NOTION_TOKEN });
 
 const DATABASES: Record<string, string> = {
@@ -48,6 +52,20 @@ function formatPage(page: any): Record<string, string> {
     if (text) result[key] = text;
   }
   return result;
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  const auth = (req.headers["authorization"] ?? "") as string;
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  return token === VALID_TOKEN;
+}
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => resolve(body));
+  });
 }
 
 function createMcpServer() {
@@ -145,20 +163,79 @@ function createMcpServer() {
   return server;
 }
 
-// Vercel serverless handler
+// ── Vercel serverless handler ─────────────────────────────────────────────────
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  // Auth check
-  const auth = (req.headers["authorization"] ?? "") as string;
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token || token !== MCP_SECRET) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Unauthorized" }));
+  const url = (req as any).url as string;
+
+  // ── OAuth metadata discovery (required by Claude.ai) ──────────────────────
+  if (url === "/.well-known/oauth-authorization-server" || url === "/.well-known/openid-configuration") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      issuer: "https://pitchless-brain-mcp.vercel.app",
+      token_endpoint: "https://pitchless-brain-mcp.vercel.app/oauth/token",
+      grant_types_supported: ["client_credentials"],
+      token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic"],
+    }));
     return;
   }
 
-  if (req.method === "GET" && (req as any).url === "/health") {
+  // ── OAuth token endpoint ───────────────────────────────────────────────────
+  if (url === "/oauth/token" && req.method === "POST") {
+    const body = await readBody(req);
+    let clientId = "";
+    let clientSecret = "";
+
+    // Support both form-encoded and JSON body
+    const contentType = req.headers["content-type"] ?? "";
+    if (contentType.includes("application/json")) {
+      try {
+        const json = JSON.parse(body);
+        clientId = json.client_id ?? "";
+        clientSecret = json.client_secret ?? "";
+      } catch {}
+    } else {
+      // application/x-www-form-urlencoded
+      const params = new URLSearchParams(body);
+      clientId = params.get("client_id") ?? "";
+      clientSecret = params.get("client_secret") ?? "";
+
+      // Also check Authorization header (Basic auth)
+      const authHeader = (req.headers["authorization"] ?? "") as string;
+      if (authHeader.startsWith("Basic ")) {
+        const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
+        const [id, secret] = decoded.split(":");
+        if (id) clientId = id;
+        if (secret) clientSecret = secret;
+      }
+    }
+
+    if (clientId !== OAUTH_CLIENT_ID || clientSecret !== OAUTH_CLIENT_SECRET) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid_client" }));
+      return;
+    }
+
+    // Issue token (same as client_id:client_secret for simplicity)
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      access_token: VALID_TOKEN,
+      token_type: "Bearer",
+      expires_in: 31536000, // 1 year
+    }));
+    return;
+  }
+
+  // ── Health check ───────────────────────────────────────────────────────────
+  if (req.method === "GET" && url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", name: "pitchless-brain-mcp" }));
+    return;
+  }
+
+  // ── MCP endpoint ───────────────────────────────────────────────────────────
+  if (!isAuthorized(req)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
     return;
   }
 

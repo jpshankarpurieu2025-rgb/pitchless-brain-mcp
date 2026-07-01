@@ -15,7 +15,7 @@ const DATABASES: Record<string, string> = {
   events: "fd05cb61-8e08-8264-a316-015d86e1d15d",
   team: "0cd5cb61-8e08-83ec-8f00-011679ca61cd",
   tasks: "4f15cb61-8e08-82fc-8a5e-013733286686",
-  members: "38d5cb61-8e08-8099-b490-d560230e34ab",
+  members: "a445cb61-8e08-82c2-af36-8185dcc2679c",
   goals: "38d5cb61-8e08-80dc-a40a-f0061bab54d4",
   ideas: "38d5cb61-8e08-8077-a086-edfc78f6ccf5",
   meetings: "38d5cb61-8e08-8007-b9db-c87cb5834450",

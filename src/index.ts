@@ -234,8 +234,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   // ── MCP endpoint ───────────────────────────────────────────────────────────
   if (!isAuthorized(req)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Unauthorized" }));
+    res.writeHead(401, {
+      "Content-Type": "application/json",
+      "WWW-Authenticate": `Bearer realm="Pitchless Brain", error="unauthorized", error_description="Authentication required"`,
+    });
+    res.end(JSON.stringify({
+      error: "unauthorized",
+      error_description: "Authentication required",
+      oauth_metadata: "https://pitchless-brain-mcp.vercel.app/.well-known/oauth-authorization-server",
+    }));
     return;
   }
 

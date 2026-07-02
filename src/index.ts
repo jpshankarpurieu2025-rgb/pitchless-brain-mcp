@@ -339,7 +339,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   // MCP endpoint — stateless JSON-RPC
   if (!isAuthorized(req)) {
-    res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": `Bearer realm="Pitchless Brain"` });
+    res.writeHead(401, {
+      "Content-Type": "application/json",
+      "WWW-Authenticate": `Bearer realm="Pitchless Brain", resource_metadata="${BASE_URL}/.well-known/oauth-protected-resource"`,
+    });
     return res.end(JSON.stringify({ error: "Unauthorized" }));
   }
 

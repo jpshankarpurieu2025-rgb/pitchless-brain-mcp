@@ -7,6 +7,8 @@ const TEAM_USERNAME = process.env.TEAM_USERNAME ?? "pitchless";
 const TEAM_PASSWORD = process.env.TEAM_PASSWORD ?? "";
 const TOKEN_SECRET = process.env.TOKEN_SECRET ?? "pitchless-token-secret";
 const BASE_URL = "https://pitchless-brain-mcp.vercel.app";
+const LUMA_API_KEY = process.env.LUMA_API_KEY ?? "";
+const TALLY_API_KEY = process.env.TALLY_API_KEY ?? "";
 
 const notion = new Client({ auth: NOTION_TOKEN });
 
@@ -152,6 +154,51 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: "get_luma_events",
+    description: "Get Pitchless events from Luma — the official event platform. Returns upcoming and past events with attendee counts, dates, and ticket info.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max events to return (default 20)" },
+        period: { type: "string", enum: ["future", "past"], description: "Filter by upcoming or past events (default: future)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_luma_event_guests",
+    description: "Get the guest list / attendees for a specific Luma event by its event API ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        event_api_id: { type: "string", description: "The Luma event API ID (e.g. 'evt-xxxx')" },
+        limit: { type: "number", description: "Max guests to return (default 50)" },
+      },
+      required: ["event_api_id"],
+    },
+  },
+  {
+    name: "get_tally_forms",
+    description: "List all Tally forms for Pitchless — applications, surveys, registrations, etc.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_tally_submissions",
+    description: "Get form submissions / responses for a specific Tally form. Use this to see leads, applicants, or survey answers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        form_id: { type: "string", description: "The Tally form ID" },
+        limit: { type: "number", description: "Max submissions to return (default 50)" },
+      },
+      required: ["form_id"],
+    },
+  },
 ];
 
 // ── MCP tool execution ────────────────────────────────────────────────────────
@@ -231,6 +278,75 @@ async function callTool(name: string, args: any): Promise<string> {
         sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
       });
       return JSON.stringify(res.results.map(formatPage), null, 2);
+    }
+
+    case "get_luma_events": {
+      const period = args.period ?? "future";
+      const limit = Math.min(args.limit ?? 20, 100);
+      const res = await fetch(`https://api.lu.ma/public/v1/calendar/list-events?period=${period}&pagination_limit=${limit}`, {
+        headers: { "x-luma-api-key": LUMA_API_KEY },
+      });
+      if (!res.ok) throw new Error(`Luma API error: ${res.status}`);
+      const data: any = await res.json();
+      const events = (data.entries ?? []).map((e: any) => ({
+        api_id: e.event?.api_id,
+        name: e.event?.name,
+        start_at: e.event?.start_at,
+        end_at: e.event?.end_at,
+        url: e.event?.url,
+        cover_url: e.event?.cover_url,
+        guest_count: e.event?.guest_count,
+        timezone: e.event?.timezone,
+      }));
+      return JSON.stringify({ period, count: events.length, events }, null, 2);
+    }
+
+    case "get_luma_event_guests": {
+      const limit = Math.min(args.limit ?? 50, 100);
+      const res = await fetch(`https://api.lu.ma/public/v1/event/get-guests?event_api_id=${args.event_api_id}&pagination_limit=${limit}`, {
+        headers: { "x-luma-api-key": LUMA_API_KEY },
+      });
+      if (!res.ok) throw new Error(`Luma API error: ${res.status}`);
+      const data: any = await res.json();
+      const guests = (data.entries ?? []).map((e: any) => ({
+        name: e.guest?.name,
+        email: e.guest?.email,
+        approval_status: e.guest?.approval_status,
+        registered_at: e.guest?.registered_at,
+        checked_in_at: e.guest?.checked_in_at,
+      }));
+      return JSON.stringify({ event_api_id: args.event_api_id, count: guests.length, guests }, null, 2);
+    }
+
+    case "get_tally_forms": {
+      const res = await fetch("https://api.tally.so/forms", {
+        headers: { Authorization: `Bearer ${TALLY_API_KEY}` },
+      });
+      if (!res.ok) throw new Error(`Tally API error: ${res.status}`);
+      const data: any = await res.json();
+      const forms = (data.forms ?? data ?? []).map((f: any) => ({
+        id: f.id,
+        title: f.title,
+        status: f.status,
+        created_at: f.createdAt,
+        submissions_count: f.submissionsCount,
+        url: f.url,
+      }));
+      return JSON.stringify({ count: forms.length, forms }, null, 2);
+    }
+
+    case "get_tally_submissions": {
+      const limit = Math.min(args.limit ?? 50, 100);
+      const res = await fetch(`https://api.tally.so/forms/${args.form_id}/submissions?limit=${limit}`, {
+        headers: { Authorization: `Bearer ${TALLY_API_KEY}` },
+      });
+      if (!res.ok) throw new Error(`Tally API error: ${res.status}`);
+      const data: any = await res.json();
+      return JSON.stringify({
+        form_id: args.form_id,
+        count: (data.submissions ?? data?.data ?? []).length,
+        submissions: data.submissions ?? data?.data ?? data,
+      }, null, 2);
     }
 
     default:

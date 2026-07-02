@@ -249,6 +249,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const urlObj = new URL(url, BASE_URL);
   const p = urlObj.pathname;
 
+  // CORS — allow Claude.ai and any origin to reach OAuth + MCP endpoints
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, MCP-Protocol-Version");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    return res.end();
+  }
+
   // OAuth protected resource metadata (RFC 9728) — Claude.ai requires this
   if (p === "/.well-known/oauth-protected-resource" || p.startsWith("/.well-known/oauth-protected-resource/")) {
     res.writeHead(200, { "Content-Type": "application/json" });

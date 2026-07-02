@@ -249,6 +249,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const urlObj = new URL(url, BASE_URL);
   const p = urlObj.pathname;
 
+  // OAuth protected resource metadata (RFC 9728) — Claude.ai requires this
+  if (p === "/.well-known/oauth-protected-resource" || p.startsWith("/.well-known/oauth-protected-resource/")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      resource: BASE_URL,
+      authorization_servers: [BASE_URL],
+    }));
+  }
+
   // OAuth discovery
   if (p === "/.well-known/oauth-authorization-server") {
     res.writeHead(200, { "Content-Type": "application/json" });

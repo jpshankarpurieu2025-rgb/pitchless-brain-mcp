@@ -256,9 +256,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       issuer: BASE_URL,
       authorization_endpoint: `${BASE_URL}/oauth/authorize`,
       token_endpoint: `${BASE_URL}/oauth/token`,
+      registration_endpoint: `${BASE_URL}/oauth/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256", "plain"],
+    }));
+  }
+
+  // Dynamic client registration — always return the same static client
+  if (p === "/oauth/register" && req.method === "POST") {
+    res.writeHead(201, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      client_id: "pitchless-brain-client",
+      client_secret: "pitchless-brain-secret",
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
     }));
   }
 

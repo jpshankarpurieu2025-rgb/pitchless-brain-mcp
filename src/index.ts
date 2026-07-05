@@ -380,34 +380,43 @@ async function callTool(name: string, args: any): Promise<string> {
     }
 
     case "get_buffer_channels": {
-      const query = `{ account { id organizations { id name } channels { id name service serviceId avatar url } } }`;
-      const res = await fetch("https://api.buffer.com/graphql", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
-      const data: any = await res.json();
-      const account = data?.data?.account ?? {};
+      const bufferGql = async (q: string) => {
+        const r = await fetch("https://api.buffer.com/graphql", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q }),
+        });
+        if (!r.ok) throw new Error(`Buffer API error: ${r.status}`);
+        return r.json();
+      };
+      const accountData: any = await bufferGql(`{ account { id name organizations { id name } } }`);
+      const orgId = accountData?.data?.account?.organizations?.[0]?.id;
+      const channelsData: any = await bufferGql(`{ channels(input: { organizationId: "${orgId}" }) { id name service serviceId } }`);
       return JSON.stringify({
-        organization_id: account.organizations?.[0]?.id ?? null,
-        channels: account.channels ?? [],
+        organization_id: orgId,
+        channels: channelsData?.data?.channels ?? [],
       }, null, 2);
     }
 
     case "get_buffer_posts": {
       const status = args.status ?? "sent";
       const limit = Math.min(args.limit ?? 20, 100);
-      const statusMap: Record<string, string> = { sent: "SENT", scheduled: "SCHEDULED", draft: "DRAFT" };
+      // First get org ID
+      const orgRes: any = await (await fetch("https://api.buffer.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query: `{ account { organizations { id } } }` }),
+      })).json();
+      const orgId = orgRes?.data?.account?.organizations?.[0]?.id;
       const query = `{
-        channel(id: "${args.channel_id}") {
-          id name service
-          posts(first: ${limit}, filter: { status: ${statusMap[status] ?? "SENT"} }) {
-            edges { node {
-              id text status scheduledAt sentAt metricsUpdatedAt
-              metrics { type name value unit }
-            }}
-          }
+        posts(input: {
+          organizationId: "${orgId}"
+          filter: { channelIds: ["${args.channel_id}"], status: ${status} }
+        }) {
+          edges { node {
+            id text status sentAt metricsUpdatedAt
+            metrics { type name value unit }
+          }}
         }
       }`;
       const res = await fetch("https://api.buffer.com/graphql", {
@@ -417,24 +426,18 @@ async function callTool(name: string, args: any): Promise<string> {
       });
       if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
       const data: any = await res.json();
-      const posts = (data?.data?.channel?.posts?.edges ?? []).map((e: any) => e.node);
+      const posts = (data?.data?.posts?.edges ?? []).slice(0, limit).map((e: any) => e.node);
       return JSON.stringify({ channel_id: args.channel_id, status, count: posts.length, posts }, null, 2);
     }
 
     case "get_buffer_analytics": {
-      // First get the organization ID
-      const orgQuery = `{ account { organizations { id } } }`;
-      const orgRes = await fetch("https://api.buffer.com/graphql", {
+      const orgRes: any = await (await fetch("https://api.buffer.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: orgQuery }),
-      });
-      if (!orgRes.ok) throw new Error(`Buffer API error: ${orgRes.status}`);
-      const orgData: any = await orgRes.json();
-      const orgId = orgData?.data?.account?.organizations?.[0]?.id;
+        body: JSON.stringify({ query: `{ account { organizations { id } } }` }),
+      })).json();
+      const orgId = orgRes?.data?.account?.organizations?.[0]?.id;
       if (!orgId) throw new Error("Could not find Buffer organization ID");
-
-      // Aggregate last 30 days
       const end = new Date();
       const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
       const query = `{

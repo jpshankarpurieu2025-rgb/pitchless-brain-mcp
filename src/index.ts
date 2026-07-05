@@ -218,6 +218,17 @@ const TOOLS = [
       required: ["channel_id"],
     },
   },
+  {
+    name: "get_buffer_analytics",
+    description: "Get analytics/insights for a Pitchless Buffer channel — impressions, reach, engagement, likes, comments, shares over a time period.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        channel_id: { type: "string", description: "Buffer channel ID (get from get_buffer_channels)" },
+      },
+      required: ["channel_id"],
+    },
+  },
 ];
 
 // ── MCP tool execution ────────────────────────────────────────────────────────
@@ -369,38 +380,69 @@ async function callTool(name: string, args: any): Promise<string> {
     }
 
     case "get_buffer_channels": {
-      const res = await fetch("https://api.bufferapp.com/1/profiles.json", {
-        headers: { Authorization: `Bearer ${BUFFER_API_KEY}` },
+      const query = `{ account { channels { id name service serviceId avatar url } } }`;
+      const res = await fetch("https://api.bufferapp.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
       });
       if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
       const data: any = await res.json();
-      const channels = (Array.isArray(data) ? data : []).map((p: any) => ({
-        id: p.id,
-        service: p.service,
-        handle: p.service_username,
-        avatar: p.avatar,
-        follower_count: p.statistics?.followers ?? null,
-      }));
+      const channels = data?.data?.account?.channels ?? [];
       return JSON.stringify({ count: channels.length, channels }, null, 2);
     }
 
     case "get_buffer_posts": {
       const status = args.status ?? "sent";
       const limit = Math.min(args.limit ?? 20, 100);
-      const res = await fetch(
-        `https://api.bufferapp.com/1/profiles/${args.channel_id}/updates/${status}.json?count=${limit}`,
-        { headers: { Authorization: `Bearer ${BUFFER_API_KEY}` } }
-      );
+      const statusMap: Record<string, string> = { sent: "SENT", scheduled: "SCHEDULED", draft: "DRAFT" };
+      const query = `{
+        channel(id: "${args.channel_id}") {
+          posts(first: ${limit}, filter: { status: ${statusMap[status] ?? "SENT"} }) {
+            edges { node {
+              id text status scheduledAt sentAt
+              statistics { impressions reach engagements likes comments shares clicks }
+            }}
+          }
+        }
+      }`;
+      const res = await fetch("https://api.bufferapp.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
       if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
       const data: any = await res.json();
-      const posts = (data.updates ?? []).map((u: any) => ({
-        id: u.id,
-        text: u.text,
-        status: u.status,
-        scheduled_at: u.scheduled_at ? new Date(u.scheduled_at * 1000).toISOString() : null,
-        statistics: u.statistics ?? null,
-      }));
+      const posts = (data?.data?.channel?.posts?.edges ?? []).map((e: any) => e.node);
       return JSON.stringify({ channel_id: args.channel_id, status, count: posts.length, posts }, null, 2);
+    }
+
+    case "get_buffer_analytics": {
+      const query = `{
+        channel(id: "${args.channel_id}") {
+          name service
+          insights {
+            followers { value change }
+            impressions { value change }
+            reach { value change }
+            engagementRate { value change }
+          }
+          posts(first: 10, filter: { status: SENT }) {
+            edges { node {
+              id text sentAt
+              statistics { impressions reach engagements likes comments shares clicks }
+            }}
+          }
+        }
+      }`;
+      const res = await fetch("https://api.bufferapp.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
+      const data: any = await res.json();
+      return JSON.stringify(data?.data?.channel ?? data, null, 2);
     }
 
     default:

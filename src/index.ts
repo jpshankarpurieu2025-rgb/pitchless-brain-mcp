@@ -380,7 +380,7 @@ async function callTool(name: string, args: any): Promise<string> {
     }
 
     case "get_buffer_channels": {
-      const query = `{ account { channels { id name service serviceId avatar url } } }`;
+      const query = `{ account { id organizations { id name } channels { id name service serviceId avatar url } } }`;
       const res = await fetch("https://api.bufferapp.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
@@ -388,8 +388,11 @@ async function callTool(name: string, args: any): Promise<string> {
       });
       if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
       const data: any = await res.json();
-      const channels = data?.data?.account?.channels ?? [];
-      return JSON.stringify({ count: channels.length, channels }, null, 2);
+      const account = data?.data?.account ?? {};
+      return JSON.stringify({
+        organization_id: account.organizations?.[0]?.id ?? null,
+        channels: account.channels ?? [],
+      }, null, 2);
     }
 
     case "get_buffer_posts": {
@@ -398,10 +401,11 @@ async function callTool(name: string, args: any): Promise<string> {
       const statusMap: Record<string, string> = { sent: "SENT", scheduled: "SCHEDULED", draft: "DRAFT" };
       const query = `{
         channel(id: "${args.channel_id}") {
+          id name service
           posts(first: ${limit}, filter: { status: ${statusMap[status] ?? "SENT"} }) {
             edges { node {
-              id text status scheduledAt sentAt
-              statistics { impressions reach engagements likes comments shares clicks }
+              id text status scheduledAt sentAt metricsUpdatedAt
+              metrics { type name value unit }
             }}
           }
         }
@@ -418,21 +422,30 @@ async function callTool(name: string, args: any): Promise<string> {
     }
 
     case "get_buffer_analytics": {
+      // First get the organization ID
+      const orgQuery = `{ account { organizations { id } } }`;
+      const orgRes = await fetch("https://api.bufferapp.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query: orgQuery }),
+      });
+      if (!orgRes.ok) throw new Error(`Buffer API error: ${orgRes.status}`);
+      const orgData: any = await orgRes.json();
+      const orgId = orgData?.data?.account?.organizations?.[0]?.id;
+      if (!orgId) throw new Error("Could not find Buffer organization ID");
+
+      // Aggregate last 30 days
+      const end = new Date();
+      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
       const query = `{
-        channel(id: "${args.channel_id}") {
-          name service
-          insights {
-            followers { value change }
-            impressions { value change }
-            reach { value change }
-            engagementRate { value change }
-          }
-          posts(first: 10, filter: { status: SENT }) {
-            edges { node {
-              id text sentAt
-              statistics { impressions reach engagements likes comments shares clicks }
-            }}
-          }
+        aggregatedPostMetrics(input: {
+          organizationId: "${orgId}"
+          startDateTime: "${start.toISOString()}"
+          endDateTime: "${end.toISOString()}"
+          channelIds: ["${args.channel_id}"]
+        }) {
+          metrics { type name value unit }
+          metricsUpdatedAt
         }
       }`;
       const res = await fetch("https://api.bufferapp.com/graphql", {
@@ -442,7 +455,11 @@ async function callTool(name: string, args: any): Promise<string> {
       });
       if (!res.ok) throw new Error(`Buffer API error: ${res.status}`);
       const data: any = await res.json();
-      return JSON.stringify(data?.data?.channel ?? data, null, 2);
+      return JSON.stringify({
+        channel_id: args.channel_id,
+        period: { start: start.toISOString(), end: end.toISOString() },
+        ...data?.data?.aggregatedPostMetrics,
+      }, null, 2);
     }
 
     default:

@@ -381,7 +381,7 @@ async function callTool(name: string, args: any): Promise<string> {
 
     case "get_buffer_channels": {
       const query = `{ account { id organizations { id name } channels { id name service serviceId avatar url } } }`;
-      const res = await fetch("https://api.bufferapp.com/graphql", {
+      const res = await fetch("https://api.buffer.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
@@ -410,7 +410,7 @@ async function callTool(name: string, args: any): Promise<string> {
           }
         }
       }`;
-      const res = await fetch("https://api.bufferapp.com/graphql", {
+      const res = await fetch("https://api.buffer.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
@@ -424,7 +424,7 @@ async function callTool(name: string, args: any): Promise<string> {
     case "get_buffer_analytics": {
       // First get the organization ID
       const orgQuery = `{ account { organizations { id } } }`;
-      const orgRes = await fetch("https://api.bufferapp.com/graphql", {
+      const orgRes = await fetch("https://api.buffer.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query: orgQuery }),
@@ -448,7 +448,7 @@ async function callTool(name: string, args: any): Promise<string> {
           metricsUpdatedAt
         }
       }`;
-      const res = await fetch("https://api.bufferapp.com/graphql", {
+      const res = await fetch("https://api.buffer.com/graphql", {
         method: "POST",
         headers: { Authorization: `Bearer ${BUFFER_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query }),

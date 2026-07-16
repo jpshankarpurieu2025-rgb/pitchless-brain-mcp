@@ -354,13 +354,13 @@ async function callTool(name: string, args: any): Promise<string> {
       });
       if (!res.ok) throw new Error(`Tally API error: ${res.status}`);
       const data: any = await res.json();
-      const forms = (data.forms ?? data ?? []).map((f: any) => ({
+      const forms = (data.items ?? []).map((f: any) => ({
         id: f.id,
-        title: f.title,
+        title: f.name,
         status: f.status,
         created_at: f.createdAt,
-        submissions_count: f.submissionsCount,
-        url: f.url,
+        submissions_count: f.numberOfSubmissions,
+        is_closed: f.isClosed,
       }));
       return JSON.stringify({ count: forms.length, forms }, null, 2);
     }
